@@ -7,6 +7,7 @@
         createOrder: createOrder,
         cancelOrder: cancelOrder,
         initialize: initialize,
+        fetchAllBalances:fetchAllBalances,
         finalize: finalize
     };
 
@@ -401,6 +402,28 @@
             tradingSystem.addError([tradingSystemOrder.id, message, docs])
             logError("cancelOrder -> Error = " + err.message);
         }
+    }
+
+    async function fetchAllBalances() {
+        // Validations:
+        if (exchange.has['fetchBalance'] === false) {
+            logError("fetchAllBalances -> Exchange does not support fetchBalance command.");
+        }
+        try {
+            let balances = await exchange.fetchBalance();
+            console.log(' -> Succesfully executed "fetchBalance" and retrieved actual account balances from the exchange.')
+            return balances;
+        } catch (err) {
+            const message = "Fetch Balances Unexpected Error" + err;
+            let docs = {
+                project: 'Foundations',
+                category: 'Topic',
+                type: 'TS LF Trading Bot Error - ' + message,
+                placeholder: {}
+            }
+            SA.logger.error("Error: " + message + "\nDocs: " + docs + "\nerr=>" + err);
+        }
+        return false;
     }
 
     function logInfo(message) {

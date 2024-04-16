@@ -187,6 +187,32 @@ exports.newAlgorithmicTradingBotModulesTradingSimulation = function (processInde
                 tradingEpisodeModuleObject.mantain()
                 tradingEngineModuleObject.mantain()
                 /*
+                fetchBalance() from exchange prior to cycles every run
+                */
+               if (sessionParameters.userDefinedParameters.config.fetchBalance !== undefined) {
+                    if (sessionParameters.userDefinedParameters.config.fetchBalance === true) {
+                        let minuteInterval = 1
+                        if (sessionParameters.userDefinedParameters.config.fetchBalanceInterval !== undefined) {
+                            minuteInterval = sessionParameters.userDefinedParameters.config.fetchBalanceInterval
+                        }
+                        let lastFetch = tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0].value === 0 ? 0 : Number.parseInt(tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0][1].info.time)
+                        if (lastFetch === undefined || Date.now() > lastFetch+Math.ceil(60000 * minuteInterval)) {
+                            let exchangeAPIModuleObject = TS.projects.algorithmicTrading.botModules.exchangeAPI.newAlgorithmicTradingBotModulesExchangeAPI(processIndex)
+                            exchangeAPIModuleObject.initialize()
+                            balances = await exchangeAPIModuleObject.fetchAllBalances()
+
+                            // Store Initial and Current raw data from fetchAllBalances() at UDV[0]
+                            if (tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0].value === 0) {
+                                tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0] = []
+                                tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0][0] = balances
+                                console.log(' -> Stored INITIAL raw data from fetchBalance() at userDefinedVariable[0][0]')
+                            }
+                            tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0][1] = balances
+                            console.log(' -> Stored CURRENT raw data from fetchBalance() at userDefinedVariable[0][1]')
+                        }
+                    }
+               }
+                /*
                 Run the first cycle of the Trading System. In this first cycle we
                 give some room so that orders can be canceled or filled and we can
                 write those records into the output memory. During this cycle new
