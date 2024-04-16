@@ -188,6 +188,9 @@ exports.newAlgorithmicTradingBotModulesTradingSimulation = function (processInde
                 tradingEngineModuleObject.mantain()
                 /*
                 fetchBalance() from exchange prior to cycles every run
+                - Preferable to store raw data from promise since data returned may vary
+                - Not best case to store it at an UDV. Would rather see it stored at tradingCurrent->exchangeBalances->initial and current
+                - Not sure if sessionParameters is the way to proc it. An optional node could be added at the tradingSession 'Fetch Actual Balances' -> 'Interval'
                 */
                if (sessionParameters.userDefinedParameters.config.fetchBalance !== undefined) {
                     if (sessionParameters.userDefinedParameters.config.fetchBalance === true) {
