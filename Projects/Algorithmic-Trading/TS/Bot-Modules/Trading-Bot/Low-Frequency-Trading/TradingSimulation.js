@@ -199,7 +199,8 @@ exports.newAlgorithmicTradingBotModulesTradingSimulation = function (processInde
                             minuteInterval = sessionParameters.userDefinedParameters.config.fetchBalanceInterval
                         }
                         let lastFetch = tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0].value === 0 ? 0 : Number.parseInt(tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0][1].info.time)
-                        if (lastFetch === undefined || Date.now() > lastFetch+Math.ceil(60000 * minuteInterval)) {
+                        if (Date.now() > lastFetch+Math.ceil(60000 * minuteInterval)) {
+                            let balances
                             let exchangeAPIModuleObject = TS.projects.algorithmicTrading.botModules.exchangeAPI.newAlgorithmicTradingBotModulesExchangeAPI(processIndex)
                             exchangeAPIModuleObject.initialize()
                             balances = await exchangeAPIModuleObject.fetchAllBalances()
