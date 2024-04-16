@@ -205,14 +205,19 @@ exports.newAlgorithmicTradingBotModulesTradingSimulation = function (processInde
                             exchangeAPIModuleObject.initialize()
                             balances = await exchangeAPIModuleObject.fetchAllBalances()
 
+                            if (balances !== undefined || balances !== false) {
                             // Store Initial and Current raw data from fetchAllBalances() at UDV[0]
-                            if (tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0].value === 0) {
-                                tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0] = []
-                                tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0][0] = balances
-                                console.log(' -> Stored INITIAL raw data from fetchBalance() at userDefinedVariable[0][0]')
+                                if (tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0].value === 0) {
+                                    tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0] = []
+                                    tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0][0] = balances
+                                    SA.logger.info('fetchBalance() -> Stored INITIAL raw data from fetchBalance() at userDefinedVariable[0][0]')
+                                }
+                                tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0][1] = balances
+                                SA.logger.info('fetchBalance() -> Stored CURRENT raw data from fetchBalance() at userDefinedVariable[0][1]')
                             }
-                            tradingEngine.tradingCurrent.tradingEpisode.userDefinedVariables.userDefinedVariable[0][1] = balances
-                            console.log(' -> Stored CURRENT raw data from fetchBalance() at userDefinedVariable[0][1]')
+                            else {
+                                SA.logger.error("fetchBalance() -> Could not retrive balances from the exchange, will retry next cycle.")
+                            }
                         }
                     }
                }

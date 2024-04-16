@@ -407,11 +407,12 @@
     async function fetchAllBalances() {
         // Validations:
         if (exchange.has['fetchBalance'] === false) {
-            logError("fetchAllBalances -> Exchange does not support fetchBalance command.");
+            logError("fetchBalance() -> Exchange does not support fetchBalance() command.")
+            return false
         }
         try {
             let balances = await exchange.fetchBalance();
-            console.log(' -> Succesfully executed "fetchBalance" and retrieved actual account balances from the exchange.')
+            logInfo("fetchBalance(): Succesfully executed fetchBalance() and retrieved actual account balances from the exchange.")
             return balances;
         } catch (err) {
             const message = "Fetch Balances Unexpected Error" + err;
@@ -421,7 +422,7 @@
                 type: 'TS LF Trading Bot Error - ' + message,
                 placeholder: {}
             }
-            SA.logger.error("Error: " + message + "\nDocs: " + docs + "\nerr=>" + err);
+            logError("fetchBalance() -> Error: " + message + "\nDocs: " + docs + "\nerr=>" + err);
         }
         return false;
     }
