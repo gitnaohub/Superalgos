@@ -1,0 +1,1 @@
+ctrl + shift + s: reate a copy of this Native Workspace and make it your own, copy工作空间
