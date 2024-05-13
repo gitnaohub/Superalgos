@@ -67,7 +67,7 @@ exports.newAlgorithmicTradingBotModulesTradingOrders = function (processIndex) {
                 placeholder: {}
             }
 
-            badDefinitionUnhandledException(undefined, message, tradingSystemStageNode.initialTargets, docs)
+            badDefinitionUnhandledException(undefined, message, tradingSystemStageNode.initialTargets)
         }                
 
         exchangeAPIModuleObject.initialize()

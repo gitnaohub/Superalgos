@@ -21,7 +21,6 @@
     let rateLimit = 500
     let limit = 1000 // This is the default value
     let hostname
-    let defaultType
     let maxRate
     
     
@@ -151,7 +150,7 @@
 
     async function getOrderHistory(symbol, since, limit, params) {
         if (exchange.has['fetchUnifiedAccountOrders'] === false) {
-            if (exchange.has['fetchClosedOrders' === false]) {
+            if (exchange.has['fetchClosedOrders'] === false) {
                 logError("getOrderHistory -> Exchange does not support neither fetchUnifiedAccountOrders or fetchClosedOrders")
                 return
             }
@@ -163,13 +162,14 @@
     
         try {
             let orders
+            if (exchange.has['fetchUnifiedAccountOrders']) {
                 orders = await exchange.fetchUnifiedAccountOrders(symbol, since, limit, params)
                 return orders
-                /*
-            else if (exchange.has['fetchClosedOrders']) {
+            }
+            else {
                 orders = await exchange.fetchClosedOrders(symbol, since, limit, params)
                 return orders
-            }*/
+            }
         } catch (err) {
             const message = 'Get Order Hitory Unexpected Error'
             let docs = {
@@ -202,7 +202,6 @@
 
     async function getOrder(tradingSystemOrder, tradingEngineOrder) {
         let orderId = tradingEngineOrder.exchangeId.value
-        let params = {}
         
         /* Basic Logging */
         logInfo("getOrder -> orderId = " + orderId)
