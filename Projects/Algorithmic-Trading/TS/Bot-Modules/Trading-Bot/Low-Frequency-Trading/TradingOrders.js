@@ -56,18 +56,9 @@ exports.newAlgorithmicTradingBotModulesTradingOrders = function (processIndex) {
             }
         }
 
+        // 'Only one reducing side is allowed. "Reduce Size Filled on Buy" OR "Reduce Size Filled on Sell".'
         if (reduceSizeOnBuy === true && reduceSizeOnSell === true) {              
-            // 'Only one reducing side is allowed. "Reduce Size Filled on Buy" OR "Reduce Size Filled on Sell".'
-            const message = 'Only One Reducing Side Allowed'
-
-            let docs = {
-                project: 'Foundations',
-                category: 'Topic',
-                type: 'TS LF Trading Bot Error - ' + message,
-                placeholder: {}
-            }
-
-            badDefinitionUnhandledException(undefined, message, tradingSystemStageNode.initialTargets)
+            badDefinitionUnhandledException(undefined, 'Only One Reducing Side Allowed', tradingSystemStageNode.initialTargets)
         }                
 
         exchangeAPIModuleObject.initialize()
