@@ -2,6 +2,14 @@
     "type": "Initial Targets",
     "menuItems": [
         {
+            "action": "Configure",
+            "label": "Configure",
+            "translationKey": "general.configure",
+            "iconPathOn": "configuration",
+            "iconPathOff": "configuration",
+            "actionFunction": "uiObject.configEditor.activate"
+        },
+        {
             "action": "Add Missing Children",
             "label": "Add Missing Items",
             "translationKey": "add.missing.items",
@@ -23,6 +31,12 @@
             "actionFunction": "payload.executeAction"
         }
     ],
+    "editors": {
+        "config": true
+    },
+    "initialValues": {
+        "config": "{\n\"reduceSizeOnBuy\": false,\n\"reduceSizeOnSell\": false\n}"
+    },
     "addLeftIcons": true,
     "level": 2,
     "attachingRules": {
