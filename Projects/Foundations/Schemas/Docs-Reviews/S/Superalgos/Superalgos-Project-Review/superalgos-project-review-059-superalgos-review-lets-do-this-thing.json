@@ -9,7 +9,8 @@
     "paragraphs": [
         {
             "style": "Text",
-            "text": "Right click and Edit to enter edit mode and change this text. ENTER to write new paragraphs. ESC to exit edit mode. Then you can use docs.save to save your changes and app.contribute to send it to the main repository."
+            "text": "Greetings from Brazil! Trying to learn more about this amazing project. Why not a portuguese translation?",
+            "updated": 1727829289445
         }
     ]
 }
