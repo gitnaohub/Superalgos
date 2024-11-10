@@ -4,9 +4,11 @@
 
     let thisObject = {
         getOrder: getOrder,
+        getOrderHistory: getOrderHistory,
         createOrder: createOrder,
         cancelOrder: cancelOrder,
         initialize: initialize,
+        fetchAllBalances:fetchAllBalances,
         finalize: finalize
     };
 
@@ -19,7 +21,6 @@
     let rateLimit = 500
     let limit = 1000 // This is the default value
     let hostname
-    let defaultType
     let maxRate
     
     
@@ -147,8 +148,59 @@
         exchange = undefined
     }
 
-    async function getOrder(tradingSystemOrder, tradingEngineOrder) {
+    async function getOrderHistory(symbol, since, limit, params) {
+        if (exchange.has['fetchUnifiedAccountOrders'] === false) {
+            if (exchange.has['fetchClosedOrders'] === false) {
+                logError("getOrderHistory -> Exchange does not support neither fetchUnifiedAccountOrders or fetchClosedOrders")
+                return
+            }
+        }
+        if (symbol === undefined) {
+            logError("getOrderHistory -> Symbol is required for fetchUnifiedAccountOrders and fetchClosedOrders")
+            return
+        }
+    
+        try {
+            let orders
+            if (exchange.has['fetchUnifiedAccountOrders']) {
+                orders = await exchange.fetchUnifiedAccountOrders(symbol, since, limit, params)
+                return orders
+            }
+            else {
+                orders = await exchange.fetchClosedOrders(symbol, since, limit, params)
+                return orders
+            }
+        } catch (err) {
+            const message = 'Get Order Hitory Unexpected Error'
+            let docs = {
+                project: 'Foundations',
+                category: 'Topic',
+                type: 'TS LF Trading Bot Error - ' + message,
+                placeholder: {}
+            }
+            let contextInfo = {
+                symbol: symbol,
+                since: since,
+                limit: limit,
+                params: params
+            }
 
+            TS.projects.education.utilities.docsFunctions.buildPlaceholder(docs, err, tradingSystemOrder.name, undefined, undefined, undefined, contextInfo)
+
+            tradingSystem.addError([tradingSystemOrder.id, message, docs])
+
+            logError("getOrder -> Error = " + err.message);
+            if (/[0-9a-z]+ NotFound/.test(err.message)) {
+                logInfo("getOrderHistory -> NotFound, so order is actually open.")
+                order = {
+                    status: 'NotFound'
+                }
+                return orders
+            }
+        }
+    }
+
+    async function getOrder(tradingSystemOrder, tradingEngineOrder) {
         let orderId = tradingEngineOrder.exchangeId.value
         
         /* Basic Logging */
@@ -162,7 +214,12 @@
         }
 
         try {
-            let order = await exchange.fetchOrder(orderId, symbol)
+            let order
+            if (exchangeId === 'bybit') {
+                order = await exchange.fetchUnifiedAccountOrders(symbol, undefined, undefined, params = {"orderId": orderId})
+                logInfo("getOrder -> Response from the Exchange: " + JSON.stringify(order));
+                return order[0]
+            } else { order = await exchange.fetchOrder(orderId, symbol, params) }
 
             logInfo("getOrder -> Response from the Exchange: " + JSON.stringify(order));
             return order
@@ -200,24 +257,20 @@
         let type                                                            // CCXT: a string literal type of order, ccxt currently unifies market and limit orders only
         let side                                                            // CCXT: a string literal for the direction of your order, buy or sell
         // let symbol = TS.projects.foundations.globals.taskConstants.TASK_NODE.parentNode.parentNode.parentNode.referenceParent.baseAsset.referenceParent.config.codeName + '/' + TS.projects.foundations.globals.taskConstants.TASK_NODE.parentNode.parentNode.parentNode.referenceParent.quotedAsset.referenceParent.config.codeName    // CCXT: a string literal symbol of the market you wish to trade on, like BTC/USD, ZEC/ETH, DOGE/DASH, etc
-        let amount // = tradingEngineOrder.orderBaseAsset.size.value           // CCXT: how much of currency you want to trade, in Base Asset.
+        let amount = tradingEngineOrder.orderBaseAsset.size.value           // CCXT: how much of currency you want to trade, in Base Asset.
         
         // The above amount can be better configured?
         // Check if market is linear or inverse?
         // I propose to use the definition inside the exchange config -> options -> defaultType: inverse
-
+        // 2024-04-25: I suggest having a parameter at the options "orderAmountInQuote" that does not interfer with somthing that is used by ccxt. -Carl J
 
         if (exchangeConfig.options !== undefined) {
-            if (exchangeConfig.options.defaultType !== undefined) {
-                defaultType = exchangeConfig.options.defaultType
-
-                if (defaultType == 'inverse') {
-                    amount = tradingEngineOrder.orderQuotedAsset.size.value
-                } else {
-                    amount = tradingEngineOrder.orderBaseAsset.size.value
-                }
-            } 
-        } else {amount = tradingEngineOrder.orderBaseAsset.size.value}
+            let orderAmountInQuote = false
+            if (exchangeConfig.options.orderAmountInQuote !== undefined) {
+                orderAmountInQuote = exchangeConfig.options.orderAmountInQuote
+            }
+            if (orderAmountInQuote) { amount = tradingEngineOrder.orderQuotedAsset.size.value }
+        }
 
         // Uncomment for debug
         // SA.logger.info('exchangeConfig.options.defaultType is: ' + exchangeConfig.options.defaultType)
@@ -266,6 +319,11 @@
 
         // Hotfix to overcome issue with Binance Spot Market Orders as per https://github.com/ccxt/ccxt/issues/18663
         if (exchangeId === 'binance' && type === 'market') { price = undefined }
+
+        // Hotfix for Unified Trading Account on 'bybit'
+        if (exchangeId === 'bybit' && side === 'buy') {amount = tradingEngineOrder.orderQuotedAsset.size.value}
+        if (exchangeId === 'bybit' && side === 'sell') {amount = tradingEngineOrder.orderBaseAsset.size.value}
+        if (exchangeId === 'bybit' && type === 'market') {price = undefined}
 
         /* Basic Logging */
         logInfo("createOrder -> symbol = " + symbol);
@@ -379,6 +437,12 @@
         }
 
         try {
+            if (exchangeId === 'bybit') {
+                let order = await exchange.cancelUnifiedAccountOrder(orderId, symbol)
+
+                logInfo("cancelOrder -> Response from the Exchange: " + JSON.stringify(order));
+                return true
+            }
             let order = await exchange.cancelOrder(orderId, symbol)
 
             logInfo("cancelOrder -> Response from the Exchange: " + JSON.stringify(order));
@@ -401,6 +465,29 @@
             tradingSystem.addError([tradingSystemOrder.id, message, docs])
             logError("cancelOrder -> Error = " + err.message);
         }
+    }
+
+    async function fetchAllBalances() {
+        // Validations:
+        if (exchange.has['fetchBalance'] === false) {
+            logError("fetchBalance() -> Exchange does not support fetchBalance() command.")
+            return false
+        }
+        try {
+            let balances = await exchange.fetchBalance();
+            logInfo("fetchBalance(): Succesfully executed fetchBalance() and retrieved actual account balances from the exchange.")
+            return balances;
+        } catch (err) {
+            const message = "Fetch Balances Unexpected Error" + err;
+            let docs = {
+                project: 'Foundations',
+                category: 'Topic',
+                type: 'TS LF Trading Bot Error - ' + message,
+                placeholder: {}
+            }
+            logError("fetchBalance() -> Error: " + message + "\nDocs: " + docs + "\nerr=>" + err);
+        }
+        return false;
     }
 
     function logInfo(message) {

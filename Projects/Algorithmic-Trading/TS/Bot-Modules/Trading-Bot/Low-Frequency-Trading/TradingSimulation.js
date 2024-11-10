@@ -23,6 +23,7 @@ exports.newAlgorithmicTradingBotModulesTradingSimulation = function (processInde
     let outgoingTradingSignalsModuleObject
     let portfolioManagerClientModuleObject
     let tradingEngineModuleObject
+    let exchangeAPIModuleObject
 
     return thisObject
 
@@ -49,6 +50,9 @@ exports.newAlgorithmicTradingBotModulesTradingSimulation = function (processInde
         portfolioManagerClientModuleObject = TS.projects.portfolioManagement.modules.portfolioManagerClient.newPortfolioManagementModulesPortfolioManagerClient(processIndex)
         portfolioManagerClientModuleObject.initialize()
 
+        exchangeAPIModuleObject = TS.projects.algorithmicTrading.botModules.exchangeAPI.newAlgorithmicTradingBotModulesExchangeAPI(processIndex)
+        exchangeAPIModuleObject.initialize()
+
         /* This object is already initialized */
         tradingEngineModuleObject = TS.projects.foundations.globals.processModuleObjects.MODULE_OBJECTS_BY_PROCESS_INDEX_MAP.get(processIndex).ENGINE_MODULE_OBJECT
     }
@@ -60,6 +64,7 @@ exports.newAlgorithmicTradingBotModulesTradingSimulation = function (processInde
         incomingTradingSignalsModuleObject.finalize()
         outgoingTradingSignalsModuleObject.finalize()
         portfolioManagerClientModuleObject.finalize()
+        exchangeAPIModuleObject.finalize()
 
         tradingSystem = undefined
         tradingEngine = undefined
@@ -71,6 +76,7 @@ exports.newAlgorithmicTradingBotModulesTradingSimulation = function (processInde
         incomingTradingSignalsModuleObject = undefined
         outgoingTradingSignalsModuleObject = undefined
         portfolioManagerClientModuleObject = undefined
+        exchangeAPIModuleObject = undefined
     }
 
     async function runSimulation(
@@ -186,6 +192,96 @@ exports.newAlgorithmicTradingBotModulesTradingSimulation = function (processInde
                 tradingSystemModuleObject.mantain()
                 tradingEpisodeModuleObject.mantain()
                 tradingEngineModuleObject.mantain()
+
+                /*
+                fetchBalance() from exchange prior to cycles every run on given interval
+                - Preferable to store raw data from promise since data returned may vary
+                - Not best case to store it at an userDefinedStatistics. Would rather see it stored at tradingCurrent->exchangeBalances->initial and current
+                - Not sure if sessionParameters is the way to proc it. An optional node could be added at the tradingSession 'Fetch Actual Balances' -> 'Interval'
+                */
+                let fetchBalance = false
+                if (sessionParameters.userDefinedParameters.config.fetchBalance !== undefined) { fetchBalance = sessionParameters.userDefinedParameters.config.fetchBalance }
+                
+                if (fetchBalance) {
+                    // Initialize storage node
+                    if (tradingEngine.tradingCurrent.tradingEpisode.tradingEpisodeStatistics.userDefinedStatistics[0].value === 0) {
+                        tradingEngine.tradingCurrent.tradingEpisode.tradingEpisodeStatistics.userDefinedStatistics[0] = { 
+                            lastFetchBalance: 0,
+                            initialBalances: undefined, 
+                            currentBalances: undefined }
+                    }
+
+                    let fetchBalanceInterval = 1
+                    if (sessionParameters.userDefinedParameters.config.fetchBalanceInterval !== undefined) {
+                        fetchBalanceInterval = sessionParameters.userDefinedParameters.config.fetchBalanceInterval
+                    }
+
+                    let lastFetchBalance = tradingEngine.tradingCurrent.tradingEpisode.tradingEpisodeStatistics.userDefinedStatistics[0].lastFetchBalance
+                    if (Date.now() > lastFetchBalance+Math.ceil(60000 * fetchBalanceInterval)) {
+                        let balances
+                        balances = await exchangeAPIModuleObject.fetchAllBalances()
+
+                        if (balances !== undefined) {
+                        // First fetchBalance()
+                            if (lastFetchBalance === 0) {
+                                tradingEngine.tradingCurrent.tradingEpisode.tradingEpisodeStatistics.userDefinedStatistics[0].initialBalances = balances
+                                SA.logger.info('fetchBalance() -> Stored INITIAL raw data from fetchBalance() at tradingEngine->tradingCurrent->episodeStatistics->userDefinedCounters[0].initialBalances')
+                            }
+                            tradingEngine.tradingCurrent.tradingEpisode.tradingEpisodeStatistics.userDefinedStatistics[0].currentBalances = balances
+                            tradingEngine.tradingCurrent.tradingEpisode.tradingEpisodeStatistics.userDefinedStatistics[0].lastFetchBalance = Date.now()
+                            SA.logger.info('fetchBalance() -> Stored CURRENT raw data from fetchBalance() at tradingEngine->tradingCurrent->episodeStatistics->userDefinedCounters[0].currentBalances')
+                        } else { SA.logger.error("fetchBalance() -> Could not retrive balances from the exchange, will retry next cycle.") }
+                    }
+                }
+                /*
+                fetchOrders() from exchange prior to cycles every run on given interval
+                - Preferable to store raw data from promise since data returned may vary
+                - Not best case to store it at an userDefinedStatistics. Would rather see it stored at tradingCurrent->exchangeOrders
+                - Not sure if sessionParameters is the way to proc it. An optional node could be added at the tradingSession 'Fetch Orders' -> 'Interval' and 'Time Span'
+                */
+                let fetchOrders = false
+                if (sessionParameters.userDefinedParameters.config.fetchOrders !== undefined) { fetchOrders = sessionParameters.userDefinedParameters.config.fetchOrders }
+
+                if (fetchOrders) {
+                    // Initialize storage node
+                    if (tradingEngine.tradingCurrent.tradingEpisode.tradingEpisodeStatistics.userDefinedStatistics[1].value === 0) {
+                        tradingEngine.tradingCurrent.tradingEpisode.tradingEpisodeStatistics.userDefinedStatistics[1] = { 
+                            lastFetchOrders: 0, 
+                            previousOrderHistory: undefined, 
+                            currentOrderHistory: undefined }
+                    }
+
+                    let fetchOrdersInterval = 1
+                    if (sessionParameters.userDefinedParameters.config.fetchOrdersInterval !== undefined) {
+                        fetchOrdersInterval = sessionParameters.userDefinedParameters.config.fetchOrdersInterval
+                    }
+
+                    let lastFetchOrders = tradingEngine.tradingCurrent.tradingEpisode.tradingEpisodeStatistics.userDefinedStatistics[1].lastFetchOrders
+                    if (Date.now() > lastFetchOrders+Math.ceil(60000 * fetchOrdersInterval)) {
+                        let fetchOrdersMinutesTimeSpan = 1
+                        if (sessionParameters.userDefinedParameters.config.fetchOrdersMinutesTimeSpan !== undefined) {
+                            fetchOrdersMinutesTimeSpan = sessionParameters.userDefinedParameters.config.fetchOrdersMinutesTimeSpan
+                        }
+
+                        const symbol = TS.projects.foundations.globals.taskConstants.TASK_NODE.parentNode.parentNode.parentNode.referenceParent.config.codeName
+                        let since = Date.now()-Math.ceil(60000 * fetchOrdersMinutesTimeSpan)
+                        let limit = undefined
+                        let params = {}
+                        
+                        let orders
+                        orders = await exchangeAPIModuleObject.getOrderHistory(symbol, since, limit, params = {})
+
+                        if (orders !== undefined) {
+                            // First fetchOrderHistory()
+                            if (lastFetchOrders === 0) {
+                                tradingEngine.tradingCurrent.tradingEpisode.tradingEpisodeStatistics.userDefinedStatistics[1].previousOrderHistory = orders
+                            }
+                            tradingEngine.tradingCurrent.tradingEpisode.tradingEpisodeStatistics.userDefinedStatistics[1].currentOrderHistory = orders
+                            tradingEngine.tradingCurrent.tradingEpisode.tradingEpisodeStatistics.userDefinedStatistics[1].lastFetchOrders = Date.now()
+                            SA.logger.info('fetchOrderHistory() -> Stored raw data from fetchOrderHistory() at tradingEngine->tradingCurrent->episodeStatistics->userDefinedCounters[1].orderHistory')
+                        } else { SA.logger.error("fetchOrderHistory() -> Could not retrive order history from the exchange, will retry next cycle.") }
+                    }
+                }
                 /*
                 Run the first cycle of the Trading System. In this first cycle we
                 give some room so that orders can be canceled or filled and we can

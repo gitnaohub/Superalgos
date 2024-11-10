@@ -374,8 +374,9 @@ exports.newAlgorithmicTradingBotModulesTradingStages = function (processIndex) {
                 )
                 await checkIfStageNeedsToBeClosed(tradingEngineStage, tradingSystemStage, 'Open Stage')
 
-                /* User Defined Code if runWhileAtStage==true */
+                /* User Defined Code or announcements if runWhileAtStage==true */
                 if (tradingEngine.tradingCurrent.strategyOpenStage.status.value === 'Open') {
+                    checkAnnounce('Open Stage', 'Open')
                     checkUserDefinedCode('Open Stage', 'Running', 'last')
                 }
             }
@@ -916,7 +917,7 @@ exports.newAlgorithmicTradingBotModulesTradingStages = function (processIndex) {
                 /* Exit Position size and rate */
                 await tradingSystem.evalFormulas(tradingSystemStage.initialTargets, 'Initial Targets')
                 if (tradingPositionModuleObject.initialTargets(tradingSystemStage, tradingEngineStage) === false) {
-                    changeStageStatus('Close Stage', 'Opem')
+                    changeStageStatus('Close Stage', 'Open')
                     changeStageStatus('Close Stage', 'Closed', 'Position Size Zero')
                     return
                 }
@@ -953,8 +954,9 @@ exports.newAlgorithmicTradingBotModulesTradingStages = function (processIndex) {
                 )
 
                 await checkIfStageNeedsToBeClosed(tradingEngineStage, tradingSystemStage, 'Close Stage')
-                /* If User Defined Code exists check for runWhileAtStage */
+                /* If User Defined Code exists check for runWhileAtStage and Announcements whileAt */
                 if (tradingEngine.tradingCurrent.strategyCloseStage.status.value === 'Open') {
+                    checkAnnounce('Close Stage', 'Open')
                     checkUserDefinedCode('Close Stage', 'Running', 'last')
                 }
             }

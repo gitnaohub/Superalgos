@@ -46,20 +46,21 @@ exports.newSocialBotsBotModulesAnnouncements = function (processIndex) {
 
             // Check configuration to see if Announcement should be run at Enter, Exit of Node, or Interval
             // set defaults, protect against empty configurations or missing values
-            let onEnter = true
+            let onEnter = false
             let onExit = false
+            let whileAt = false
 
             if (announcement.config.onEnter !== undefined) {
                 onEnter = announcement.config.onEnter
             }
             if (announcement.config.onExit !== undefined) {
                 onExit = announcement.config.onExit
-                if (announcement.config.onEnter === undefined) {
-                    onEnter = false
-                }
+            }
+            if (announcement.config.whileAt !== undefined) {
+                whileAt = announcement.config.whileAt
             }
 
-            if ((status === 'Open' && onEnter) || (status === 'Closed' && onExit)) {
+            if ((status === 'Open' && onEnter) || (status === 'Closed' && onExit) || whileAt) {
                 canAnnounce = true
             } else {
                 canAnnounce = false

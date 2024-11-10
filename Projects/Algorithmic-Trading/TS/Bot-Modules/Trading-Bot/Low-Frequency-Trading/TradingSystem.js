@@ -476,41 +476,8 @@ exports.newAlgorithmicTradingBotModulesTradingSystem = function (processIndex) {
             Here is where the Formula Code is evaluated.
             */
             value = eval(node.code)
-            /*
-            Now that we have the value of the formula, we will check with the Porfolio Manager
-            to see if we can use this value, or we need to use something else.
-            */
-            if (parentNode.askPortfolioFormulaManager !== undefined) {
-                let response = await portfolioManagerClient.askPortfolioFormulaManager(node, parentNode, value)
-                value = response.value
-            }
-            /*
-            Now we actually have the final value. We will check if we need to broadcast a signals
-            with this value as context or not.
-            */
-            await outgoingTradingSignalsModuleObject.broadcastSignal(parentNode, value)
 
-        } catch (err) {
-            /*
-                One possible error is that the formula references a .previous that is undefined. This
-                will not be considered an error.
-            */
-            value = 0
-            errorMessage = err.message
-            docs = {
-                project: 'Foundations',
-                category: 'Topic',
-                type: 'TS LF Trading Bot Error - Evaluating Formula Error',
-                placeholder: {}
-            }
-            TS.projects.education.utilities.docsFunctions.buildPlaceholder(docs, err, node.name, node.code, undefined)
-        }
-
-        if (errorMessage !== undefined) {
-            tradingSystem.addError([node.id, errorMessage, docs])
-            TS.projects.foundations.globals.loggerVariables.VARIABLES_BY_PROCESS_INDEX_MAP.get(processIndex).BOT_MAIN_LOOP_LOGGER_MODULE_OBJECT.write(MODULE_NAME, '[INFO] evalFormula -> errorMessage = ' + errorMessage)
-            return
-        } else {
+            // Let's store the value if it is defnied and is a number/float
             if (value !== undefined) {
                 if (node.type === 'Formula' && isNaN(value)) {
 
@@ -542,9 +509,45 @@ exports.newAlgorithmicTradingBotModulesTradingSystem = function (processIndex) {
                 return
 
             }
+
+            /*
+            Now that we have the value of the formula, we will check with the Porfolio Manager
+            to see if we can use this value, or we need to use something else.
+            */
+            if (parentNode.askPortfolioFormulaManager !== undefined) {
+                let response = await portfolioManagerClient.askPortfolioFormulaManager(node, parentNode, value)
+                value = response.value
+            }
+
+            /*
+            Now we actually have the final value. We will check if we need to broadcast a signals
+            with this value as context or not.
+            */
+            await outgoingTradingSignalsModuleObject.broadcastSignal(parentNode, value)
+
+            TS.projects.foundations.globals.loggerVariables.VARIABLES_BY_PROCESS_INDEX_MAP.get(processIndex).BOT_MAIN_LOOP_LOGGER_MODULE_OBJECT.write(MODULE_NAME, '[INFO] evalFormula -> value = ' + value)
+
+        } catch (err) {
+            /*
+                One possible error is that the formula references a .previous that is undefined. This
+                will not be considered an error.
+            */
+            value = 0
+            errorMessage = err.message
+            docs = {
+                project: 'Foundations',
+                category: 'Topic',
+                type: 'TS LF Trading Bot Error - Evaluating Formula Error',
+                placeholder: {}
+            }
+            TS.projects.education.utilities.docsFunctions.buildPlaceholder(docs, err, node.name, node.code, undefined)
         }
 
-        TS.projects.foundations.globals.loggerVariables.VARIABLES_BY_PROCESS_INDEX_MAP.get(processIndex).BOT_MAIN_LOOP_LOGGER_MODULE_OBJECT.write(MODULE_NAME, '[INFO] evalFormula -> value = ' + value)
+        if (errorMessage !== undefined) {
+            tradingSystem.addError([node.id, errorMessage, docs])
+            TS.projects.foundations.globals.loggerVariables.VARIABLES_BY_PROCESS_INDEX_MAP.get(processIndex).BOT_MAIN_LOOP_LOGGER_MODULE_OBJECT.write(MODULE_NAME, '[INFO] evalFormula -> errorMessage = ' + errorMessage)
+            return
+        }
     }
 
     async function evalJSCode(node) {

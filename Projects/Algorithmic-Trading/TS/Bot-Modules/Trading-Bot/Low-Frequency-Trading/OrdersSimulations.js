@@ -19,18 +19,64 @@ exports.newAlgorithmicTradingBotModulesOrdersSimulations = function (processInde
     let tradingSystem
     let sessionParameters
 
+    let reduceSizeOnBuy
+    let reduceSizeOnSell
+
     return thisObject
 
     function initialize() {
         sessionParameters = TS.projects.foundations.globals.processConstants.CONSTANTS_BY_PROCESS_INDEX_MAP.get(processIndex).SESSION_NODE.tradingParameters
         tradingEngine = TS.projects.foundations.globals.processVariables.VARIABLES_BY_PROCESS_INDEX_MAP.get(processIndex).SIMULATION_STATE.tradingEngine
         tradingSystem = TS.projects.foundations.globals.processVariables.VARIABLES_BY_PROCESS_INDEX_MAP.get(processIndex).SIMULATION_STATE.tradingSystem
+
+        /* Assign side to consider for accouting towards Stage Size */
+        reduceSizeOnBuy = false
+        reduceSizeOnSell = false
+        let tradingSystemStageNode
+
+        if ( tradingEngine.tradingCurrent.strategyOpenStage.status.value === 'Open' ) { 
+            tradingSystemStageNode = tradingSystem.tradingStrategies[tradingEngine.tradingCurrent.strategy.index.value].openStage 
+        }
+
+        else if ( tradingEngine.tradingCurrent.strategyCloseStage.status.value === 'Open' && (
+                tradingEngine.tradingCurrent.strategyOpenStage.status.value === 'Closed' ||
+                tradingEngine.tradingCurrent.strategyOpenStage.status.value === tradingEngine.tradingCurrent.strategyOpenStage.status.config.initialValue )
+        ) { 
+            tradingSystemStageNode = tradingSystem.tradingStrategies[tradingEngine.tradingCurrent.strategy.index.value].closeStage
+        }
+
+        if (tradingSystemStageNode !== undefined && tradingSystemStageNode.initialTargets.config !== undefined) {
+            if (tradingSystemStageNode.initialTargets.config.reduceSizeOnBuy !== undefined) {
+                reduceSizeOnBuy = tradingSystemStageNode.initialTargets.config.reduceSizeOnBuy
+            }
+            if (tradingSystemStageNode.initialTargets.config.reduceSizeOnSell !== undefined) {
+                reduceSizeOnSell = tradingSystemStageNode.initialTargets.config.reduceSizeOnSell
+            }
+        }
+
+        if (reduceSizeOnBuy === true && reduceSizeOnSell === true) {              
+            // 'Only one reducing side is allowed. "Reduce Size Filled on Buy" OR "Reduce Size Filled on Sell".'
+            const message = 'Only One Reducing Side Allowed'
+
+            let docs = {
+                project: 'Foundations',
+                category: 'Topic',
+                type: 'TS LF Trading Bot Error - ' + message,
+                placeholder: {}
+            }
+
+            badDefinitionUnhandledException(undefined, message, tradingSystemStageNode.initialTargets, docs)                
+        }
     }
 
     function finalize() {
         sessionParameters = undefined
         tradingEngine = undefined
         tradingSystem = undefined
+
+        tradingSystemStageNode = undefined
+        reduceSizeOnBuy = undefined
+        reduceSizeOnSell = undefined
     }
 
     async function actualSizeSimulation(tradingEngineStage, tradingSystemOrder, tradingEngineOrder, applyFeePercentage) {
@@ -309,14 +355,32 @@ exports.newAlgorithmicTradingBotModulesOrdersSimulations = function (processInde
             account with the new Actual Size. 
             */
             let previousStageQuotedAssetSizePlaced = tradingEngineStage.stageQuotedAsset.sizePlaced.value
+            if (reduceSizeOnSell && (tradingSystemOrder.type === 'Market Sell Order' || tradingSystemOrder.type === 'Limit Sell Order')) {
+                previousStageQuotedAssetSizePlaced = -previousStageQuotedAssetSizePlaced
+            }
+            if (reduceSizeOnBuy && (tradingSystemOrder.type === 'Market Buy Order' || tradingSystemOrder.type === 'Limit Buy Order')) {
+                previousStageQuotedAssetSizePlaced = -previousStageQuotedAssetSizePlaced
+            }
 
             tradingEngineStage.stageQuotedAsset.sizePlaced.value =
                 tradingEngineStage.stageQuotedAsset.sizePlaced.value -
                 previousQuotedAssetActualSize
 
-            tradingEngineStage.stageQuotedAsset.sizePlaced.value =
-                tradingEngineStage.stageQuotedAsset.sizePlaced.value +
-                tradingEngineOrder.orderQuotedAsset.actualSize.value
+            if (reduceSizeOnSell && (tradingSystemOrder.type === 'Market Sell Order' || tradingSystemOrder.type === 'Limit Sell Order')) {
+                tradingEngineStage.stageQuotedAsset.sizePlaced.value =
+                    tradingEngineStage.stageQuotedAsset.sizePlaced.value -
+                    tradingEngineOrder.orderQuotedAsset.actualSize.value
+             }
+            if (reduceSizeOnBuy && (tradingSystemOrder.type === 'Market Buy Order' || tradingSystemOrder.type === 'Limit Buy Order')) {
+                tradingEngineStage.stageQuotedAsset.sizePlaced.value =
+                    tradingEngineStage.stageQuotedAsset.sizePlaced.value -
+                    tradingEngineOrder.orderQuotedAsset.actualSize.value
+             }
+            else {
+                tradingEngineStage.stageQuotedAsset.sizePlaced.value =
+                    tradingEngineStage.stageQuotedAsset.sizePlaced.value +
+                    tradingEngineOrder.orderQuotedAsset.actualSize.value
+            }
 
             tradingEngineStage.stageQuotedAsset.sizePlaced.value = TS.projects.foundations.utilities.miscellaneousFunctions.truncateToThisPrecision(tradingEngineStage.stageQuotedAsset.sizePlaced.value, 10)
 

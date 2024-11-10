@@ -20,18 +20,63 @@ exports.newAlgorithmicTradingBotModulesOrdersCalculations = function (processInd
     let sessionParameters
     let exchangeConfig = TS.projects.foundations.globals.taskConstants.TASK_NODE.parentNode.parentNode.parentNode.referenceParent.parentNode.parentNode.config
 
+    let reduceSizeOnBuy
+    let reduceSizeOnSell
+
     return thisObject
 
     function initialize() {
         sessionParameters = TS.projects.foundations.globals.processConstants.CONSTANTS_BY_PROCESS_INDEX_MAP.get(processIndex).SESSION_NODE.tradingParameters
         tradingEngine = TS.projects.foundations.globals.processVariables.VARIABLES_BY_PROCESS_INDEX_MAP.get(processIndex).SIMULATION_STATE.tradingEngine
         tradingSystem = TS.projects.foundations.globals.processVariables.VARIABLES_BY_PROCESS_INDEX_MAP.get(processIndex).SIMULATION_STATE.tradingSystem
+
+        /* Assign side to consider for accouting towards Stage Size */
+        reduceSizeOnBuy = false
+        reduceSizeOnSell = false
+        let tradingSystemStageNode
+
+        if ( tradingEngine.tradingCurrent.strategyOpenStage.status.value === 'Open' ) { 
+            tradingSystemStageNode = tradingSystem.tradingStrategies[tradingEngine.tradingCurrent.strategy.index.value].openStage 
+        }
+
+        else if ( tradingEngine.tradingCurrent.strategyCloseStage.status.value === 'Open' && (
+                tradingEngine.tradingCurrent.strategyOpenStage.status.value === 'Closed' ||
+                tradingEngine.tradingCurrent.strategyOpenStage.status.value === tradingEngine.tradingCurrent.strategyOpenStage.status.config.initialValue )
+        ) { 
+            tradingSystemStageNode = tradingSystem.tradingStrategies[tradingEngine.tradingCurrent.strategy.index.value].closeStage
+        }
+
+        if (tradingSystemStageNode !== undefined && tradingSystemStageNode.initialTargets.config !== undefined) {
+            if (tradingSystemStageNode.initialTargets.config.reduceSizeOnBuy !== undefined) {
+                reduceSizeOnBuy = tradingSystemStageNode.initialTargets.config.reduceSizeOnBuy
+            }
+            if (tradingSystemStageNode.initialTargets.config.reduceSizeOnSell !== undefined) {
+                reduceSizeOnSell = tradingSystemStageNode.initialTargets.config.reduceSizeOnSell
+            }
+        }
+
+        if (reduceSizeOnBuy === true && reduceSizeOnSell === true) {              
+            // 'Only one reducing side is allowed. "Reduce Size Filled on Buy" OR "Reduce Size Filled on Sell".'
+            const message = 'Only One Reducing Side Allowed'
+
+            let docs = {
+                project: 'Foundations',
+                category: 'Topic',
+                type: 'TS LF Trading Bot Error - ' + message,
+                placeholder: {}
+            }
+
+            badDefinitionUnhandledException(undefined, message, tradingSystemStageNode.initialTargets, docs)                
+        }
     }
 
     function finalize() {
         sessionParameters = undefined
         tradingEngine = undefined
         tradingSystem = undefined
+        tradingSystemStageNode = undefined
+        reduceSizeOnBuy = undefined
+        reduceSizeOnSell = undefined
     }
 
     async function actualSizeCalculation(tradingEngineStage, tradingSystemOrder, tradingEngineOrder, order, applyFeePercentage) {
@@ -61,7 +106,7 @@ exports.newAlgorithmicTradingBotModulesOrdersCalculations = function (processInd
 
         if ( order.amount !== undefined) {
             /* We receive the actual size from the exchange at the order.amount field. */
-            // ORIGINAL tradingEngineOrder.orderBaseAsset.actualSize.value = order.amount // Left just in case .. 
+            tradingEngineOrder.orderBaseAsset.actualSize.value = order.amount // Uncommented original because one can have 'options' defined but not defaultType: inverse
             
             // Here we check if the market is inverse 
             // Example BTC/USD:BTC -> Calcs must be made for baseAsset in this case because
@@ -71,23 +116,22 @@ exports.newAlgorithmicTradingBotModulesOrdersCalculations = function (processInd
             if (exchangeConfig.options !== undefined) {
                 if (exchangeConfig.options.defaultType !== undefined) {
                     defaultType = exchangeConfig.options.defaultType
-    
                     if (defaultType == 'inverse') {
-                        tradingEngineOrder.orderBaseAsset.actualSize.value = order.amount / order.average
-                        
-                    } else {
-                        tradingEngineOrder.orderBaseAsset.actualSize.value = order.amount
-                        
+                        tradingEngineOrder.orderBaseAsset.actualSize.value = order.amount / order.average                        
                     } 
                 }
-            }  else {tradingEngineOrder.orderBaseAsset.actualSize.value = order.amount}
+                if (exchangeConfig.options.enableUnifiedAccount !== undefined) {
+                    if (exchangeConfig.options.enableUnifiedAccount) {
+                        if (order.side === 'buy') { tradingEngineOrder.orderBaseAsset.actualSize.value = order.amount / order.average }
+                        if (order.side === 'sell') { tradingEngineOrder.orderBaseAsset.actualSize.value = order.amount }
+                    }
+                }
+            } 
 
 
             // Uncomment when debugging
             // SA.logger.info('The order placed in OrdersCalculation is:')
             // SA.logger.info(order)
-
-
         }
 
         recalculateActualSize()
@@ -114,21 +158,58 @@ exports.newAlgorithmicTradingBotModulesOrdersCalculations = function (processInd
             We need to unaccount the previous size placed and correctly account
             for the the new actual sizes we now know.
             */
-            tradingEngineStage.stageBaseAsset.sizePlaced.value =
-                tradingEngineStage.stageBaseAsset.sizePlaced.value -
-                tradingEngineOrder.orderBaseAsset.size.value
 
-            tradingEngineStage.stageBaseAsset.sizePlaced.value =
-                tradingEngineStage.stageBaseAsset.sizePlaced.value +
-                tradingEngineOrder.orderBaseAsset.actualSize.value
+            if (reduceSizeOnSell && (tradingSystemOrder.type === 'Market Sell Order' || tradingSystemOrder.type === 'Limit Sell Order')) {
+                tradingEngineStage.stageBaseAsset.sizePlaced.value =
+                    tradingEngineStage.stageBaseAsset.sizePlaced.value +
+                    tradingEngineOrder.orderBaseAsset.size.value
 
-            tradingEngineStage.stageQuotedAsset.sizePlaced.value =
-                tradingEngineStage.stageQuotedAsset.sizePlaced.value -
-                tradingEngineOrder.orderQuotedAsset.size.value
+                tradingEngineStage.stageBaseAsset.sizePlaced.value =
+                    tradingEngineStage.stageBaseAsset.sizePlaced.value -
+                    tradingEngineOrder.orderBaseAsset.actualSize.value
 
-            tradingEngineStage.stageQuotedAsset.sizePlaced.value =
-                tradingEngineStage.stageQuotedAsset.sizePlaced.value +
-                tradingEngineOrder.orderQuotedAsset.actualSize.value
+                tradingEngineStage.stageQuotedAsset.sizePlaced.value =
+                    tradingEngineStage.stageQuotedAsset.sizePlaced.value +
+                    tradingEngineOrder.orderQuotedAsset.size.value
+
+                tradingEngineStage.stageQuotedAsset.sizePlaced.value =
+                    tradingEngineStage.stageQuotedAsset.sizePlaced.value -
+                    tradingEngineOrder.orderQuotedAsset.actualSize.value
+            }
+            else if (reduceSizeOnBuy && (tradingSystemOrder.type === 'Market Buy Order' || tradingSystemOrder.type === 'Limit Buy Order')) {
+                tradingEngineStage.stageBaseAsset.sizePlaced.value =
+                    tradingEngineStage.stageBaseAsset.sizePlaced.value +
+                    tradingEngineOrder.orderBaseAsset.size.value
+
+                tradingEngineStage.stageBaseAsset.sizePlaced.value =
+                    tradingEngineStage.stageBaseAsset.sizePlaced.value -
+                    tradingEngineOrder.orderBaseAsset.actualSize.value
+
+                tradingEngineStage.stageQuotedAsset.sizePlaced.value =
+                    tradingEngineStage.stageQuotedAsset.sizePlaced.value +
+                    tradingEngineOrder.orderQuotedAsset.size.value
+
+                tradingEngineStage.stageQuotedAsset.sizePlaced.value =
+                    tradingEngineStage.stageQuotedAsset.sizePlaced.value -
+                    tradingEngineOrder.orderQuotedAsset.actualSize.value
+            }
+            else {
+                tradingEngineStage.stageBaseAsset.sizePlaced.value =
+                    tradingEngineStage.stageBaseAsset.sizePlaced.value -
+                    tradingEngineOrder.orderBaseAsset.size.value
+
+                tradingEngineStage.stageBaseAsset.sizePlaced.value =
+                    tradingEngineStage.stageBaseAsset.sizePlaced.value +
+                    tradingEngineOrder.orderBaseAsset.actualSize.value
+
+                tradingEngineStage.stageQuotedAsset.sizePlaced.value =
+                    tradingEngineStage.stageQuotedAsset.sizePlaced.value -
+                    tradingEngineOrder.orderQuotedAsset.size.value
+
+                tradingEngineStage.stageQuotedAsset.sizePlaced.value =
+                    tradingEngineStage.stageQuotedAsset.sizePlaced.value +
+                    tradingEngineOrder.orderQuotedAsset.actualSize.value
+            }
 
             tradingEngineStage.stageBaseAsset.sizePlaced.value = TS.projects.foundations.utilities.miscellaneousFunctions.truncateToThisPrecision(tradingEngineStage.stageBaseAsset.sizePlaced.value, 10)
             tradingEngineStage.stageQuotedAsset.sizePlaced.value = TS.projects.foundations.utilities.miscellaneousFunctions.truncateToThisPrecision(tradingEngineStage.stageQuotedAsset.sizePlaced.value, 10)
@@ -153,50 +234,13 @@ exports.newAlgorithmicTradingBotModulesOrdersCalculations = function (processInd
             We will use the average whenever is available. As of today it is not 100% clear when this is
             available, but it seems sometimes it is not. In those cases we use the price.
             */
-            // ORIGINAL tradingEngineOrder.orderStatistics.actualRate.value = order.average
-
-            // Here we check if the market is inverse 
-            // Example BTC/USD:BTC -> Calcs must be made for baseAsset in this case because
-            // the contract is an inverse contract and is settled in base currency
-            
-            if (exchangeConfig.options !== undefined) {
-                if (exchangeConfig.options.defaultType !== undefined) {
-                    defaultType = exchangeConfig.options.defaultType
-    
-                    if (defaultType == 'inverse') {
-                        tradingEngineOrder.orderStatistics.actualRate.value = order.amount / order.average
-                        
-                    } else {
-                        tradingEngineOrder.orderStatistics.actualRate.value = order.average
-                        
-                    } 
-                }
-            }  else {tradingEngineOrder.orderStatistics.actualRate.value = order.average}
-
-
+            tradingEngineOrder.orderStatistics.actualRate.value = order.average  // Uncommented original because rate should either be average or price
 
         } else if (order.price !== undefined) {
             /*
             We use the order.price when the average is not available.
             */
-            // ORIGINAL tradingEngineOrder.orderStatistics.actualRate.value = order.price
-
-
-            if (exchangeConfig.options !== undefined) {
-                if (exchangeConfig.options.defaultType !== undefined) {
-                    defaultType = exchangeConfig.options.defaultType
-    
-                    if (defaultType == 'inverse') {
-                        tradingEngineOrder.orderStatistics.actualRate.value = order.amount / order.price
-                        // SA.logger.info('ORDER AMOUNT/AVERAGE CALCS: ' + tradingEngineOrder.orderBaseAsset.actualSize.value)
-                    } else {
-                        tradingEngineOrder.orderStatistics.actualRate.value = order.price
-                        // SA.logger.info('STD CALCS: ' + tradingEngineOrder.orderBaseAsset.actualSize.value)
-                    } 
-                }
-            }  else {tradingEngineOrder.orderStatistics.actualRate.value = order.price}
-
-
+            tradingEngineOrder.orderStatistics.actualRate.value = order.price
         }
 
         tradingEngineOrder.orderStatistics.actualRate.value = TS.projects.foundations.utilities.miscellaneousFunctions.truncateToThisPrecision(tradingEngineOrder.orderStatistics.actualRate.value, 10)
@@ -208,6 +252,12 @@ exports.newAlgorithmicTradingBotModulesOrdersCalculations = function (processInd
         if (tradingEngineOrder.orderStatistics.actualRate.value === tradingEngineOrder.rate.value) { return }
 
         let previousQuotedAssetActualSize = tradingEngineOrder.orderQuotedAsset.actualSize.value
+        if (reduceSizeOnSell && (tradingSystemOrder.type === 'Market Sell Order' || tradingSystemOrder.type === 'Limit Sell Order')) {
+            previousQuotedAssetActualSize = -previousQuotedAssetActualSize
+        }
+        if (reduceSizeOnBuy && (tradingSystemOrder.type === 'Market Buy Order' || tradingSystemOrder.type === 'Limit Buy Order')) {
+            previousQuotedAssetActualSize = -previousQuotedAssetActualSize
+        }
 
         recalculateActualSize()
         recalculateSizePlaced()
@@ -224,6 +274,12 @@ exports.newAlgorithmicTradingBotModulesOrdersCalculations = function (processInd
             from the Order Size in Quoted Asset input it by the user. So here we go. 
             */
             previousQuotedAssetActualSize = tradingEngineOrder.orderQuotedAsset.actualSize.value
+            if (reduceSizeOnSell && (tradingSystemOrder.type === 'Market Sell Order' || tradingSystemOrder.type === 'Limit Sell Order')) {
+                previousQuotedAssetActualSize = -previousQuotedAssetActualSize
+            }
+            if (reduceSizeOnBuy && (tradingSystemOrder.type === 'Market Buy Order' || tradingSystemOrder.type === 'Limit Buy Order')) {
+                previousQuotedAssetActualSize = -previousQuotedAssetActualSize
+            }
 
             tradingEngineOrder.orderQuotedAsset.actualSize.value =
                 tradingEngineOrder.orderBaseAsset.actualSize.value *
@@ -256,18 +312,39 @@ exports.newAlgorithmicTradingBotModulesOrdersCalculations = function (processInd
         }
 
         function recalculateSizePlaced() {
-            let previousStageQuotedAssetSizePlaced = tradingEngineStage.stageQuotedAsset.sizePlaced.value
             /*
             Since we changed the Actual Size in Quoted Asset, we need to fix the Size Placed in Quoted Asset
             that was previously calculated with the previous value of actualSize.
             */
-            tradingEngineStage.stageQuotedAsset.sizePlaced.value =
-                tradingEngineStage.stageQuotedAsset.sizePlaced.value -
-                previousQuotedAssetActualSize
+            let previousStageQuotedAssetSizePlaced = tradingEngineStage.stageQuotedAsset.sizePlaced.value
+            if (reduceSizeOnSell && (tradingSystemOrder.type === 'Market Sell Order' || tradingSystemOrder.type === 'Limit Sell Order')) {
+                previousStageQuotedAssetSizePlaced = -previousStageQuotedAssetSizePlaced
+            }
+            if (reduceSizeOnBuy && (tradingSystemOrder.type === 'Market Buy Order' || tradingSystemOrder.type === 'Limit Buy Order')) {
+                previousStageQuotedAssetSizePlaced = -previousStageQuotedAssetSizePlaced
+            }
 
+            /* Undo previous accounting */
             tradingEngineStage.stageQuotedAsset.sizePlaced.value =
-                tradingEngineStage.stageQuotedAsset.sizePlaced.value +
-                tradingEngineOrder.orderQuotedAsset.actualSize.value
+            tradingEngineStage.stageQuotedAsset.sizePlaced.value -
+            previousQuotedAssetActualSize
+
+            /* Update current accounting */
+            if (reduceSizeOnSell && (tradingSystemOrder.type === 'Market Sell Order' || tradingSystemOrder.type === 'Limit Sell Order')) {
+                tradingEngineStage.stageQuotedAsset.sizePlaced.value =
+                    tradingEngineStage.stageQuotedAsset.sizePlaced.value -
+                    tradingEngineOrder.orderQuotedAsset.actualSize.value
+            }
+            else if (reduceSizeOnBuy && (tradingSystemOrder.type === 'Market Buy Order' || tradingSystemOrder.type === 'Limit Buy Order')) {
+                tradingEngineStage.stageQuotedAsset.sizePlaced.value =
+                    tradingEngineStage.stageQuotedAsset.sizePlaced.value -
+                    tradingEngineOrder.orderQuotedAsset.actualSize.value
+            }
+            else {
+                tradingEngineStage.stageQuotedAsset.sizePlaced.value =
+                    tradingEngineStage.stageQuotedAsset.sizePlaced.value +
+                    tradingEngineOrder.orderQuotedAsset.actualSize.value
+            }
 
             tradingEngineStage.stageQuotedAsset.sizePlaced.value = TS.projects.foundations.utilities.miscellaneousFunctions.truncateToThisPrecision(tradingEngineStage.stageQuotedAsset.sizePlaced.value, 10)
 
